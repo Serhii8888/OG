@@ -3,28 +3,10 @@
 # Кольори
 GREEN="\e[32m"
 RED="\e[31m"
-PINK="\e[35m"
 NC="\e[0m"
 
-# Логотип
-bash <(curl -s https://raw.githubusercontent.com/Baryzhyk/nodes/refs/heads/main/logo.sh)
-
-# Анімація
-animate_loading() {
-    for ((i = 1; i <= 5; i++)); do
-        printf "\r${GREEN}Завантажуємо меню${NC}."
-        sleep 0.3
-        printf "\r${GREEN}Завантажуємо меню${NC}.."
-        sleep 0.3
-        printf "\r${GREEN}Завантажуємо меню${NC}..."
-        sleep 0.3
-        printf "\r${GREEN}Завантажуємо меню${NC}    "
-        sleep 0.3
-    done
-    echo ""
-}
-
-animate_loading
+# Вивід Telegram-каналу
+echo -e "${GREEN}Telegram канал для підтримки: @nodesua${NC}"
 
 # Перевірка whiptail
 if ! command -v whiptail &> /dev/null; then
@@ -33,8 +15,8 @@ if ! command -v whiptail &> /dev/null; then
 fi
 
 # Меню
-CHOICE=$(whiptail --title "Меню керування OG Node" \
-  --menu "Оберіть потрібну дію:" 20 70 10 \
+CHOICE=$(whiptail --title "Меню керування 0g" \
+  --menu "Оберіть потрібну дію:\n\nTelegram канал: @nodesua" 20 70 10 \
     "1" "Встановити ноду" \
     "2" "Перевірити статус ноди" \
     "3" "Перевірити піри" \
@@ -70,14 +52,15 @@ case $CHOICE in
 
     echo -e "${GREEN}Завантажуємо вузол...${NC}"
     cd $HOME
-    git clone https://github.com/Serhii8888/OG.git
-    cd OG
-    # Якщо потрібно, можна додати checkout гілки чи тегу
-    # git checkout main
+    git clone https://github.com/0glabs/0g-storage-node.git
+    cd 0g-storage-node
+    git checkout v1.0.0
+    git submodule update --init
+    cargo build --release
 
     echo -e "${GREEN}Завантажуємо конфігурацію...${NC}"
-    mkdir -p $HOME/OG/config
-    curl -o $HOME/OG/config/config.toml https://raw.githubusercontent.com/Serhii8888/OG/refs/heads/main/config/config.toml
+    rm -f $HOME/0g-storage-node/run/config.toml
+    curl -o $HOME/0g-storage-node/run/config.toml https://raw.githubusercontent.com/Serhii8888/OG/refs/heads/main/config/config.toml
 
     read -p "Вставте приватний ключ вашого гаманця (0x…): " PRIVATE_KEY
 
@@ -87,18 +70,19 @@ case $CHOICE in
     fi
 
     echo -e "${GREEN}Додаємо приватний ключ у конфігурацію...${NC}"
-    sed -i "s|^miner_key = \".*\"|miner_key = \"$PRIVATE_KEY\"|" $HOME/OG/config/config.toml
+    sed -i "s|^miner_key = \".*\"|miner_key = \"$PRIVATE_KEY\"|" $HOME/0g-storage-node/run/config.toml
+
 
     echo -e "${GREEN}Створюємо systemd сервіс...${NC}"
-    sudo tee /etc/systemd/system/og-node.service > /dev/null <<EOF
+    sudo tee /etc/systemd/system/zgs.service > /dev/null <<EOF
 [Unit]
-Description=OG Node
+Description=ZGS Node
 After=network.target
 
 [Service]
 User=$USER
-WorkingDirectory=$HOME/OG
-ExecStart=$HOME/OG/og_node --config $HOME/OG/config/config.toml
+WorkingDirectory=$HOME/0g-storage-node/run
+ExecStart=$HOME/0g-storage-node/target/release/zgs_node --config $HOME/0g-storage-node/run/config.toml
 Restart=on-failure
 RestartSec=10
 LimitNOFILE=65535
@@ -109,21 +93,20 @@ EOF
 
     echo -e "${GREEN}Запускаємо сервіс...${NC}"
     sudo systemctl daemon-reload
-    sudo systemctl enable og-node
-    sudo systemctl start og-node
+    sudo systemctl enable zgs
+    sudo systemctl start zgs
 
     echo -e "${GREEN}✅ Встановлення завершено.${NC}"
     ;;
 
   2)
     echo -e "${GREEN}Перевірка статусу...${NC}"
-    sudo systemctl status og-node
+    sudo systemctl status zgs
     echo -e "${GREEN}Для виходу натисніть Ctrl + C.${NC}"
     ;;
 
   3)
     echo -e "${GREEN}Перевірка пірів...${NC}"
-    # Замініть URL та метод під свій ноду, якщо інший
     while true; do
         response=$(curl -s -X POST http://localhost:5678 -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"zgs_getStatus","params":[],"id":1}')
         logSyncHeight=$(echo $response | jq '.result.logSyncHeight')
@@ -135,7 +118,7 @@ EOF
 
   4)
     echo -e "${GREEN}Вивід поточних логів...${NC}"
-    LOG_FILE="$HOME/OG/log/zgs.log.$(TZ=UTC date +%Y-%m-%d)"
+    LOG_FILE="$HOME/0g-storage-node/run/log/zgs.log.$(TZ=UTC date +%Y-%m-%d)"
     if [ -f "$LOG_FILE" ]; then
         tail -f "$LOG_FILE"
     else
@@ -145,16 +128,16 @@ EOF
 
   5)
     echo -e "${GREEN}Перезапуск вузла...${NC}"
-    sudo systemctl restart og-node
+    sudo systemctl restart zgs
     ;;
 
   6)
     echo -e "${RED}Видаляємо вузол...${NC}"
-    sudo systemctl stop og-node
-    sudo systemctl disable og-node
-    sudo rm -f /etc/systemd/system/og-node.service
+    sudo systemctl stop zgs
+    sudo systemctl disable zgs
+    sudo rm -f /etc/systemd/system/zgs.service
     sudo systemctl daemon-reload
-    rm -rf $HOME/OG
+    rm -rf $HOME/0g-storage-node
     echo -e "${GREEN}✅ Вузол успішно видалено.${NC}"
     ;;
 esac
