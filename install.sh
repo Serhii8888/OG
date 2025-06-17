@@ -1,34 +1,20 @@
 #!/bin/bash
 
-# Кольори
 GREEN="\e[32m"
 RED="\e[31m"
 NC="\e[0m"
 
-# Вивід Telegram-каналу
 echo -e "${GREEN}Telegram канал для підтримки: @nodesua${NC}"
 
-# Перевірка whiptail
-if ! command -v whiptail &> /dev/null; then
-    echo -e "${RED}whiptail не встановлено. Встановлюємо...${NC}"
-    sudo apt install whiptail -y
-fi
-
-# Меню
-CHOICE=$(whiptail --title "Меню керування 0g" \
-  --menu "Оберіть потрібну дію:\n\nTelegram канал: @nodesua" 20 70 10 \
-    "1" "Встановити ноду" \
-    "2" "Перевірити статус ноди" \
-    "3" "Перевірити піри" \
-    "4" "Перевірити логи" \
-    "5" "Перезапустити ноду" \
-    "6" "Видалити ноду" \
-  3>&1 1>&2 2>&3)
-
-if [ $? -ne 0 ]; then
-  echo -e "${RED}Скасовано. Вихід.${NC}"
-  exit 1
-fi
+echo -e "${GREEN}Меню керування 0g:${NC}"
+echo "1. Встановити ноду"
+echo "2. Перевірити статус ноди"
+echo "3. Перевірити піри"
+echo "4. Перевірити логи"
+echo "5. Перезапустити ноду"
+echo "6. Видалити ноду"
+echo -n "Введіть номер дії: "
+read CHOICE
 
 case $CHOICE in
   1)
@@ -72,7 +58,6 @@ case $CHOICE in
     echo -e "${GREEN}Додаємо приватний ключ у конфігурацію...${NC}"
     sed -i "s|^miner_key = \".*\"|miner_key = \"$PRIVATE_KEY\"|" $HOME/0g-storage-node/run/config.toml
 
-
     echo -e "${GREEN}Створюємо systemd сервіс...${NC}"
     sudo tee /etc/systemd/system/zgs.service > /dev/null <<EOF
 [Unit]
@@ -102,7 +87,6 @@ EOF
   2)
     echo -e "${GREEN}Перевірка статусу...${NC}"
     sudo systemctl status zgs
-    echo -e "${GREEN}Для виходу натисніть Ctrl + C.${NC}"
     ;;
 
   3)
@@ -117,7 +101,7 @@ EOF
     ;;
 
   4)
-    echo -e "${GREEN}Вивід поточних логів...${NC}"
+    echo -e "${GREEN}Вивід логів...${NC}"
     LOG_FILE="$HOME/0g-storage-node/run/log/zgs.log.$(TZ=UTC date +%Y-%m-%d)"
     if [ -f "$LOG_FILE" ]; then
         tail -f "$LOG_FILE"
@@ -127,7 +111,7 @@ EOF
     ;;
 
   5)
-    echo -e "${GREEN}Перезапуск вузла...${NC}"
+    echo -e "${GREEN}Перезапуск ноди...${NC}"
     sudo systemctl restart zgs
     ;;
 
@@ -139,5 +123,8 @@ EOF
     sudo systemctl daemon-reload
     rm -rf $HOME/0g-storage-node
     echo -e "${GREEN}✅ Вузол успішно видалено.${NC}"
+    ;;
+  *)
+    echo -e "${RED}Невірний вибір.${NC}"
     ;;
 esac
