@@ -4,70 +4,94 @@ GREEN="\e[32m"
 RED="\e[31m"
 NC="\e[0m"
 
+set -e
+
 echo -e "${GREEN}Telegram канал для підтримки: @nodesua${NC}"
 
 echo -e "${GREEN}Меню керування 0g:${NC}"
-echo "1. Встановити ноду"
+echo "1. Встановити або оновити ноду"
 echo "2. Перевірити статус ноди"
 echo "3. Перевірити піри"
-echo "4. Перевірити логи"
+echo "4. Переглянути логи"
 echo "5. Перезапустити ноду"
 echo "6. Видалити ноду"
 echo -n "Введіть номер дії: "
 read CHOICE
 
-case $CHOICE in
-  1)
+NODE_DIR="$HOME/0g-storage-node"
+CONFIG_URL="https://raw.githubusercontent.com/0glabs/0g-storage-node/main/run/config.toml"
+
+install_or_update_node() {
     echo -e "${GREEN}Оновлення системи та встановлення залежностей...${NC}"
     sudo apt-get update && sudo apt-get upgrade -y
-    sudo apt install -y curl iptables build-essential git wget lz4 jq make cmake gcc nano automake autoconf tmux htop nvme-cli libgbm1 pkg-config libssl-dev libleveldb-dev tar clang bsdmainutils ncdu unzip libleveldb-dev screen ufw
+    sudo apt-get install -y curl iptables build-essential git wget lz4 jq make cmake gcc nano automake autoconf tmux htop nvme-cli libgbm1 pkg-config libssl-dev libleveldb-dev tar clang bsdmainutils ncdu unzip libleveldb-dev screen ufw
 
-    echo -e "${GREEN}Встановлення Rust...${NC}"
-    curl https://sh.rustup.rs -sSf | sh -s -- -y
+    echo -e "${GREEN}Встановлення або оновлення Rust...${NC}"
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
     source $HOME/.cargo/env
     rustc --version
 
-    echo -e "${GREEN}Встановлення Go...${NC}"
-    wget https://go.dev/dl/go1.24.3.linux-amd64.tar.gz
+    echo -e "${GREEN}Встановлення або оновлення Go...${NC}"
+    GO_VERSION="1.24.3"
+    wget -q https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz
     sudo rm -rf /usr/local/go
-    sudo tar -C /usr/local -xzf go1.24.3.linux-amd64.tar.gz
-    rm go1.24.3.linux-amd64.tar.gz
-    echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
-    export PATH=$PATH:/usr/local/go/bin
+    sudo tar -C /usr/local -xzf go${GO_VERSION}.linux-amd64.tar.gz
+    rm go${GO_VERSION}.linux-amd64.tar.gz
+
+    if ! grep -q "/usr/local/go/bin" <<< "$PATH"; then
+      echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+      export PATH=$PATH:/usr/local/go/bin
+    fi
+
     go version
 
-    echo -e "${GREEN}Завантажуємо вузол...${NC}"
-    cd $HOME
-    git clone https://github.com/0glabs/0g-storage-node.git
-    cd 0g-storage-node
-    git checkout v1.0.0
-    git submodule update --init
+    if [ ! -d "$NODE_DIR" ]; then
+        echo -e "${GREEN}Клонуємо репозиторій 0g-storage-node...${NC}"
+        git clone https://github.com/0glabs/0g-storage-node.git $NODE_DIR
+    else
+        echo -e "${GREEN}Оновлюємо репозиторій 0g-storage-node...${NC}"
+        cd $NODE_DIR
+        git fetch --all
+        git reset --hard origin/main
+    fi
+
+    cd $NODE_DIR
+
+    echo -e "${GREEN}Оновлюємо підмодулі...${NC}"
+    git submodule update --init --recursive
+
+    echo -e "${GREEN}Збираємо проект... це може зайняти декілька хвилин${NC}"
     cargo build --release
 
-    echo -e "${GREEN}Завантажуємо конфігурацію...${NC}"
-    rm -f $HOME/0g-storage-node/run/config.toml
-    curl -o $HOME/0g-storage-node/run/config.toml https://raw.githubusercontent.com/Serhii8888/OG/refs/heads/main/config/config.toml
+    mkdir -p $NODE_DIR/run
 
-    read -p "Вставте приватний ключ вашого гаманця (0x…): " PRIVATE_KEY
+    echo -e "${GREEN}Завантажуємо конфігурацію з офіційного репозиторію...${NC}"
+    curl -sSfL $CONFIG_URL -o $NODE_DIR/run/config.toml
+
+    echo -n "Вставте приватний ключ вашого гаманця (0x...): "
+    read PRIVATE_KEY
 
     if [[ ! $PRIVATE_KEY =~ ^0x[a-fA-F0-9]{64}$ ]]; then
         echo -e "${RED}Неправильний формат приватного ключа!${NC}"
         exit 1
     fi
 
-    echo -e "${GREEN}Додаємо приватний ключ у конфігурацію...${NC}"
-    sed -i "s|^miner_key = \".*\"|miner_key = \"$PRIVATE_KEY\"|" $HOME/0g-storage-node/run/config.toml
+    # У конфігу очікується ключ без префікса 0x
+    PRIVATE_KEY_NO_PREFIX=${PRIVATE_KEY:2}
+
+    echo -e "${GREEN}Вставляємо приватний ключ у конфігурацію...${NC}"
+    sed -i "s|^miner_key = \".*\"|miner_key = \"$PRIVATE_KEY_NO_PREFIX\"|" $NODE_DIR/run/config.toml
 
     echo -e "${GREEN}Створюємо systemd сервіс...${NC}"
     sudo tee /etc/systemd/system/zgs.service > /dev/null <<EOF
 [Unit]
-Description=ZGS Node
+Description=0G Storage Node
 After=network.target
 
 [Service]
 User=$USER
-WorkingDirectory=$HOME/0g-storage-node/run
-ExecStart=$HOME/0g-storage-node/target/release/zgs_node --config $HOME/0g-storage-node/run/config.toml
+WorkingDirectory=$NODE_DIR/run
+ExecStart=$NODE_DIR/target/release/zgs_node --config $NODE_DIR/run/config.toml
 Restart=on-failure
 RestartSec=10
 LimitNOFILE=65535
@@ -76,21 +100,20 @@ LimitNOFILE=65535
 WantedBy=multi-user.target
 EOF
 
-    echo -e "${GREEN}Запускаємо сервіс...${NC}"
+    echo -e "${GREEN}Перезавантажуємо systemd, запускаємо і вмикаємо сервіс автозапуску...${NC}"
     sudo systemctl daemon-reload
     sudo systemctl enable zgs
-    sudo systemctl start zgs
+    sudo systemctl restart zgs
 
-    echo -e "${GREEN}✅ Встановлення завершено.${NC}"
-    ;;
+    echo -e "${GREEN}✅ Встановлення або оновлення завершено.${NC}"
+}
 
-  2)
-    echo -e "${GREEN}Перевірка статусу...${NC}"
-    sudo systemctl status zgs
-    ;;
+check_status() {
+    sudo systemctl status zgs --no-pager
+}
 
-  3)
-    echo -e "${GREEN}Перевірка пірів...${NC}"
+check_peers() {
+    echo -e "${GREEN}Перевірка пірів (натисніть Ctrl+C для виходу)...${NC}"
     while true; do
         response=$(curl -s -X POST http://localhost:5678 -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"zgs_getStatus","params":[],"id":1}')
         logSyncHeight=$(echo $response | jq '.result.logSyncHeight')
@@ -98,31 +121,49 @@ EOF
         echo -e "logSyncHeight: \033[32m$logSyncHeight\033[0m, connectedPeers: \033[34m$connectedPeers\033[0m"
         sleep 5
     done
-    ;;
+}
 
-  4)
-    echo -e "${GREEN}Вивід логів...${NC}"
-    LOG_FILE="$HOME/0g-storage-node/run/log/zgs.log.$(TZ=UTC date +%Y-%m-%d)"
+show_logs() {
+    LOG_FILE="$NODE_DIR/run/log/zgs.log.$(TZ=UTC date +%Y-%m-%d)"
     if [ -f "$LOG_FILE" ]; then
         tail -f "$LOG_FILE"
     else
         echo -e "${RED}Лог-файл не знайдено: $LOG_FILE${NC}"
     fi
-    ;;
+}
 
-  5)
-    echo -e "${GREEN}Перезапуск ноди...${NC}"
+restart_node() {
     sudo systemctl restart zgs
-    ;;
+    echo -e "${GREEN}Нода перезапущена.${NC}"
+}
 
-  6)
-    echo -e "${RED}Видаляємо вузол...${NC}"
-    sudo systemctl stop zgs
-    sudo systemctl disable zgs
+remove_node() {
+    sudo systemctl stop zgs || true
+    sudo systemctl disable zgs || true
     sudo rm -f /etc/systemd/system/zgs.service
     sudo systemctl daemon-reload
-    rm -rf $HOME/0g-storage-node
+    rm -rf $NODE_DIR
     echo -e "${GREEN}✅ Вузол успішно видалено.${NC}"
+}
+
+case $CHOICE in
+  1)
+    install_or_update_node
+    ;;
+  2)
+    check_status
+    ;;
+  3)
+    check_peers
+    ;;
+  4)
+    show_logs
+    ;;
+  5)
+    restart_node
+    ;;
+  6)
+    remove_node
     ;;
   *)
     echo -e "${RED}Невірний вибір.${NC}"
