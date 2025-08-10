@@ -68,19 +68,16 @@ install_or_update_node() {
     echo -e "${GREEN}Завантажуємо конфігурацію з офіційного репозиторію...${NC}"
     curl -sSfL $CONFIG_URL -o $NODE_DIR/run/config.toml
 
-    echo -n "Вставте приватний ключ вашого гаманця (0x...): "
+    echo -n "Вставте приватний ключ вашого гаманця (без 0x): "
     read PRIVATE_KEY
 
-    if [[ ! $PRIVATE_KEY =~ ^0x[a-fA-F0-9]{64}$ ]]; then
+    if [[ ! $PRIVATE_KEY =~ ^[a-fA-F0-9]{64}$ ]]; then
         echo -e "${RED}Неправильний формат приватного ключа!${NC}"
         exit 1
     fi
 
-    # У конфігу очікується ключ без префікса 0x
-    PRIVATE_KEY_NO_PREFIX=${PRIVATE_KEY:2}
-
     echo -e "${GREEN}Вставляємо приватний ключ у конфігурацію...${NC}"
-    sed -i "s|^miner_key = \".*\"|miner_key = \"$PRIVATE_KEY_NO_PREFIX\"|" $NODE_DIR/run/config.toml
+    sed -i "s|^miner_key = \".*\"|miner_key = \"$PRIVATE_KEY\"|" $NODE_DIR/run/config.toml
 
     echo -e "${GREEN}Створюємо systemd сервіс...${NC}"
     sudo tee /etc/systemd/system/zgs.service > /dev/null <<EOF
