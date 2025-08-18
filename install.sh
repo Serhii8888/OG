@@ -21,7 +21,6 @@ case $CHOICE in
     echo -e "${GREEN}Оновлення системи та встановлення залежностей...${NC}"
     sudo apt-get update && sudo apt-get upgrade -y
     sudo apt install -y curl iptables build-essential git wget lz4 jq make cmake gcc nano automake autoconf tmux htop nvme-cli libgbm1 pkg-config libssl-dev libleveldb-dev tar clang bsdmainutils ncdu unzip libleveldb-dev screen ufw
-    sudo apt-get update
     sudo apt-get install -y protobuf-compiler
     
     echo -e "${GREEN}Встановлення Rust...${NC}"
